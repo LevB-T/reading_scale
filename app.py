@@ -26,27 +26,19 @@ st.markdown("""
 
 st.write("Type a title below to instantly evaluate its **Language**, **Plot**, and **Maturity** tracks.")
 
-# --- THE FIX: USER INTERFACE OVERRIDE TOGGLE ---
-is_manual_fairy_tale = st.checkbox("🧩 Check this box if this book is an Illustrated Picture Book, Early Reader, or Short Fairy Tale.")
+# --- DYNAMIC INTERFACE TOGGLE ---
+is_manual_picture_layout = st.checkbox("🧩 Check this box if this book is in a short, illustrated picture book layout.")
 
-def calculate_mosaic_scores(title, force_fairy_tale):
+def calculate_mosaic_scores(title, force_picture_layout):
     title_lower = title.lower().strip()
     
-    # Absolute user-forced override rule
-    if force_fairy_tale:
-        return {"title": title.title(), "author": "Children's Edition", "cognitive": 1, "plot": 1, "maturity": 1}, None
-    
-    # --- TYPO-PROOF ABSOLUTE OVERRIDES ---
-    if any(k in title_lower for k in ['goldilocks', 'three bears', '3 bears']):
-        return {"title": "Goldilocks and the Three Bears", "author": "Classic Fairy Tale", "cognitive": 1, "plot": 1, "maturity": 1}, None
+    # --- TYPO-PROOF SYSTEMIC CLASSIC OVERRIDES ---
     if any(k in title_lower for k in ['frank', 'shelley']):
         return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
     if any(k in title_lower for k in ['quix', 'quij']):
         return {"title": "Don Quixote", "author": "Miguel de Cervantes", "cognitive": 10, "plot": 8, "maturity": 5}, None
     if any(k in title_lower for k in ['thron', 'ice and fire', 'asoiaf', 'fyre']):
         return {"title": "A Song of Ice and Fire (Series Context)", "author": "George R.R. Martin", "cognitive": 7, "plot": 9, "maturity": 10}, None
-    if "hat back" in title_lower or "klassen" in title_lower:
-        return {"title": "I Want My Hat Back", "author": "Jon Klassen", "cognitive": 1, "plot": 2, "maturity": 1}, None
 
     query = title.replace(' ', '+')
     url = f"https://googleapis.com{query}&maxResults=3"
@@ -74,10 +66,10 @@ def calculate_mosaic_scores(title, force_fairy_tale):
         if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction']):
             is_classic_era = True
 
-        # --- DETECTOR FOR SHORT PICTURE BOOKS / EARLY READERS ---
-        is_picture_book = False
-        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'readers', 'fable', 'nursery']
-        if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords) or any(w in clean_title for w in ['bears', 'goldi', 'cinderella', 'piggie', 'seuss', 'gretel', 'rapunzel', 'sleeping beauty']):
+        # --- SMART GEOMETRIC PICTURE BOOK & FAIRY TALE DETECTOR ---
+        is_picture_book = force_picture_layout
+        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'preschool', 'readers', 'nursery']
+        if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords) or any(w in clean_title for w in ['bears', 'goldi', 'piggie', 'seuss']):
             is_picture_book = True
 
         # --- 1. LANGUAGE ALGORITHM ---
@@ -105,14 +97,20 @@ def calculate_mosaic_scores(title, force_fairy_tale):
             elif pages > 350 or 'mystery' in full_metadata_text:
                 plot = 6
             
-        # --- 3. MATURITY SCORE ---
-        if is_picture_book:
-            maturity = 2 if any(w in full_metadata_text for w in ['humor', 'dark', 'funny', 'wry']) else 1
-        else:
-            maturity = 4
-            explicit_keywords = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'violence', 'murder']
-            if any(k in full_metadata_text for k in explicit_keywords):
-                maturity = 7 if is_classic_era else 8
+        # --- 3. DYNAMIC MATURITY SCORE (Scans content flags regardless of book format) ---
+        maturity = 1 if is_picture_book else 4
+        
+        # Red-flag keywords indicating disturbing elements, dark themes, or violence
+        dark_keywords = ['grim', 'horror', 'witch', 'cannibal', 'murder', 'abandoned', 'death', 'dark', 'disturbing', 'violence', 'scary', 'sinister', 'vengeance']
+        explicit_keywords = ['thriller', 'crime', 'mature', 'psychological', 'erotica', 'explicit']
+        
+        if any(k in full_metadata_text for k in explicit_keywords):
+            maturity = 8 if pages > 400 else 7
+        elif any(k in full_metadata_text for k in dark_keywords):
+            # If a picture book or fairy tale has dark descriptions, elevate maturity safely to highlight disturbing content
+            maturity = 5 if is_picture_book else 6
+        elif is_picture_book and any(w in full_metadata_text for w in ['humor', 'wry', 'funny']):
+            maturity = 2
             
         return {
             "title": best_volume.get('title', title),
@@ -129,7 +127,7 @@ book_input = st.text_input("Enter Book Title:", "")
 
 if st.button("Analyze Book Difficulty") and book_input:
     with st.spinner("Analyzing text attributes..."):
-        data, error = calculate_mosaic_scores(book_input, is_manual_fairy_tale)
+        data, error = calculate_mosaic_scores(book_input, is_manual_picture_layout)
         st.success(f"System Matrix Scan Complete! Verified As: **{data['title']}**")
         
         col1, col2, col3 = st.columns(3)
@@ -142,8 +140,11 @@ if st.button("Analyze Book Difficulty") and book_input:
         
         st.markdown(f"<h2 style='text-align: center; color: #2D3748;'>System Code: <span style='color:#E53E3E;'>{data['cognitive']}.{data['plot']}.{data['maturity']}</span></h2>", unsafe_allow_html=True)
         
-        if data['cognitive'] <= 2:
-            st.info(f"👶 **Reader Insight:** This is an early foundational picture book or beginning reader designed for text exposure and visual storytelling.")
+        # Display context hints for dark/disturbing themes
+        if data['maturity'] >= 5 and data['cognitive'] <= 3:
+            st.warning("⚠️ **Content Warning:** While this book features basic language mechanics, the themes or underlying folklore include dark, scary, or disturbing elements.")
+        elif data['cognitive'] <= 2:
+            st.info(f"👶 **Reader Insight:** This is an early foundational picture book layout designed for quick independent parsing.")
         elif data['plot'] > data['cognitive']:
             st.info(f"💡 **Reader Insight:** This book's challenge comes from keeping track of its **complex plot webs** rather than hard vocabulary.")
         else:
