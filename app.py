@@ -17,7 +17,6 @@ st.markdown("""
 st.title("📚 The Three-Digit Book Finder")
 st.subheader("Find a book that genuinely pushes your reading range.")
 
-# --- THE SAFETY WARNING SUBHEADING ---
 st.markdown("""
 <div class="warning-banner">
     ⚠️ IMPORTANT: The Maturity score is a severity scale out of 10, NOT a recommended age! 
@@ -33,12 +32,12 @@ def calculate_mosaic_scores(title):
     # --- TYPO-PROOF ABSOLUTE OVERRIDES ---
     if any(k in title_lower for k in ['frank', 'shelley']):
         return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
-        
     if any(k in title_lower for k in ['quix', 'quij']):
         return {"title": "Don Quixote", "author": "Miguel de Cervantes", "cognitive": 10, "plot": 8, "maturity": 5}, None
-        
     if any(k in title_lower for k in ['thron', 'ice and fire', 'asoiaf', 'fyre']):
         return {"title": "A Song of Ice and Fire (Series Context)", "author": "George R.R. Martin", "cognitive": 7, "plot": 9, "maturity": 10}, None
+    if "hat back" in title_lower or "klassen" in title_lower:
+        return {"title": "I Want My Hat Back", "author": "Jon Klassen", "cognitive": 1, "plot": 2, "maturity": 1}, None
 
     query = title.replace(' ', '+')
     url = f"https://googleapis.com{query}&maxResults=3"
@@ -49,18 +48,14 @@ def calculate_mosaic_scores(title):
             return {"title": title.title(), "author": "Unknown", "cognitive": 5, "plot": 5, "maturity": 4}, None
             
         best_volume = response['items']['volumeInfo']
-        pages = best_volume.get('pageCount', 250)
+        pages = best_volume.get('pageCount', 0) # Fallback to 0 to accurately detect unlogged thin picture books
         categories = [c.lower() for c in best_volume.get('categories', [])]
         description = best_volume.get('description', '').lower()
         clean_title = best_volume.get('title', '').lower()
         
-        if 'frank' in clean_title:
-            return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
-        if any(k in clean_title for k in ['quix', 'quij']):
-            return {"title": "Don Quixote", "author": "Miguel de Cervantes", "cognitive": 10, "plot": 8, "maturity": 5}, None
-
         full_metadata_text = (clean_title + " " + description + " " + " ".join(categories)).lower()
         
+        # Pull earliest year
         earliest_year = 2026
         for item in response['items']:
             p_date = item.get('volumeInfo', {}).get('publishedDate', '2026')
@@ -68,11 +63,19 @@ def calculate_mosaic_scores(title):
             except Exception: continue
 
         is_classic_era = False
-        if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction', '19th century']):
+        if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction']):
             is_classic_era = True
 
-        # --- LANGUAGE ALGORITHM ---
-        if is_classic_era:
+        # --- SMART DETECTOR FOR SHORT PICTURE BOOKS / EARLY READERS ---
+        is_picture_book = False
+        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'readers', 'bedtime story', 'tales for kids']
+        if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords):
+            is_picture_book = True
+
+        # --- 1. LANGUAGE ALGORITHM ---
+        if is_picture_book:
+            cognitive = 2 if pages > 35 else 1
+        elif is_classic_era:
             cognitive = 10 if pages > 350 else 9
         elif pages > 800:
             cognitive = 8
@@ -83,21 +86,26 @@ def calculate_mosaic_scores(title):
         else:
             cognitive = 3
             
-        # --- PLOT COMPLEXITY ---
-        plot = 4
-        epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined', 'political intrigue']
-        if any(i in full_metadata_text for i in epic_indicators) or pages > 600 or "wheel of time" in title_lower:
-            plot = 9 if pages > 750 else 8
-        elif pages > 350 or 'mystery' in full_metadata_text:
-            plot = 6
+        # --- 2. PLOT COMPLEXITY ---
+        if is_picture_book:
+            plot = 2 if "mystery" in full_metadata_text or "find" in full_metadata_text else 1
+        else:
+            plot = 4
+            epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined']
+            if any(i in full_metadata_text for i in epic_indicators) or pages > 600 or "wheel of time" in title_lower:
+                plot = 9 if pages > 750 else 8
+            elif pages > 350 or 'mystery' in full_metadata_text:
+                plot = 6
             
-        # --- MATURITY SCORE ---
-        maturity = 4
-        explicit_keywords = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'violence', 'murder']
-        if any(k in full_metadata_text for k in explicit_keywords):
-            maturity = 7 if is_classic_era else 8
-        elif "wimpy kid" in title_lower or 'children' in full_metadata_text:
-            maturity = 2
+        # --- 3. MATURITY SCORE ---
+        if is_picture_book:
+            # Subtle dark humor protection (like the rabbit getting eaten in I Want My Hat Back)
+            maturity = 2 if any(w in full_metadata_text for w in ['humor', 'dark', 'funny', 'wry']) else 1
+        else:
+            maturity = 4
+            explicit_keywords = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'violence', 'murder']
+            if any(k in full_metadata_text for k in explicit_keywords):
+                maturity = 7 if is_classic_era else 8
             
         return {
             "title": best_volume.get('title', title),
@@ -108,8 +116,6 @@ def calculate_mosaic_scores(title):
         }, None
         
     except Exception:
-        if any(k in title_lower for k in ['frank', 'quix', 'quij', 'ody', 'punish']):
-            return {"title": title.title(), "author": "Local Model", "cognitive": 9, "plot": 6, "maturity": 6}, None
         return {"title": title.title(), "author": "Analytical Mode", "cognitive": 5, "plot": 5, "maturity": 4}, None
 
 book_input = st.text_input("Enter Book Title:", "")
@@ -117,7 +123,6 @@ book_input = st.text_input("Enter Book Title:", "")
 if st.button("Analyze Book Difficulty") and book_input:
     with st.spinner("Analyzing text attributes..."):
         data, error = calculate_mosaic_scores(book_input)
-        
         st.success(f"System Matrix Scan Complete! Verified As: **{data['title']}**")
         
         col1, col2, col3 = st.columns(3)
@@ -130,7 +135,9 @@ if st.button("Analyze Book Difficulty") and book_input:
         
         st.markdown(f"<h2 style='text-align: center; color: #2D3748;'>System Code: <span style='color:#E53E3E;'>{data['cognitive']}.{data['plot']}.{data['maturity']}</span></h2>", unsafe_allow_html=True)
         
-        if data['plot'] > data['cognitive']:
+        if data['cognitive'] <= 2:
+            st.info(f"👶 **Reader Insight:** This is an early foundational picture book or beginning reader designed for text exposure and visual storytelling.")
+        elif data['plot'] > data['cognitive']:
             st.info(f"💡 **Reader Insight:** This book's challenge comes from keeping track of its **complex plot webs** rather than hard vocabulary.")
         else:
             st.info(f"💡 **Growth Tip:** To stretch your reading skills, look for your next book to have a Language Score of **{data['cognitive'] + 1}**.")
