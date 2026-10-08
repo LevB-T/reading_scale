@@ -31,6 +31,21 @@ is_manual_picture_layout = st.checkbox("🧩 Check this box if this book is in a
 
 def calculate_mosaic_scores(title, force_picture_layout):
     title_lower = title.lower().strip()
+    
+    # --- RULE 1: THE MASTER KILL SWITCH (Intercepts EVERYTHING if box is checked) ---
+    if force_picture_layout:
+        # Defaults for a standard children's layout
+        cognitive = 2
+        plot = 1
+        maturity = 1
+        
+        # Scan title string directly for dark folklore indicators to keep maturity ratings highly accurate
+        dark_folklore = ['hansel', 'gretel', 'gretal', 'witch', 'grim', 'wolf', 'riding hood', 'bluebeard', 'cannibal', 'ogre']
+        if any(k in title_lower for k in dark_folklore):
+            maturity = 5
+            
+        return {"title": title.title(), "author": "Traditional Children's / Folklore Edition", "cognitive": cognitive, "plot": plot, "maturity": maturity}, None
+
     query = title.replace(' ', '+')
     url = f"https://googleapis.com{query}&maxResults=3"
     
@@ -45,10 +60,9 @@ def calculate_mosaic_scores(title, force_picture_layout):
         description = best_volume.get('description', '').lower()
         clean_title = best_volume.get('title', '').lower()
         
-        # 1. Identify context strings
         full_metadata_text = (clean_title + " " + description + " " + " ".join(categories)).lower()
         
-        # 2. Year historical scanning
+        # Scan year variations
         earliest_year = 2026
         for item in response['items']:
             p_date = item.get('volumeInfo', {}).get('publishedDate', '2026')
@@ -57,13 +71,13 @@ def calculate_mosaic_scores(title, force_picture_layout):
 
         is_classic_era = True if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction', '19th century']) else False
 
-        # --- RE-ENGINEERED AUTOMATIC FORMAT DETECTION ---
-        is_picture_book = force_picture_layout
+        # --- AUTOMATIC ERA/FORMAT BALANCING ---
+        is_picture_book = False
         young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'preschool', 'readers', 'nursery', 'fable', 'fairy tales']
         if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords) or any(w in title_lower for w in ['bears', 'goldi', 'piggie', 'seuss', 'gretel', 'cinder', 'riding hood']):
             is_picture_book = True
 
-        # --- TRACK 1: LANGUAGE SCORE (Purely Structural) ---
+        # --- TRACK 1: LANGUAGE SCORE ---
         if is_picture_book:
             cognitive = 2 if pages > 35 else 1
         elif is_classic_era:
@@ -77,30 +91,27 @@ def calculate_mosaic_scores(title, force_picture_layout):
         else:
             cognitive = 3
             
-        # --- TRACK 2: PLOT COMPLEXITY (Strictly isolated from Maturity Keywords) ---
+        # --- TRACK 2: PLOT COMPLEXITY ---
         if is_picture_book:
-            # Short format plots are forced to low tiers regardless of theme severity
             plot = 2 if any(w in full_metadata_text for w in ['mystery', 'secrets', 'find']) else 1
         else:
             plot = 4
-            epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined', 'political intrigue', 'complex web', 'rich lore']
+            epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined', 'political intrigue']
             if any(i in full_metadata_text for i in epic_indicators) or pages > 600 or any(w in title_lower for w in ['fellowship', 'thrones', 'wheel of time']):
                 plot = 9 if pages > 750 else 8
             elif pages > 350 or 'mystery' in full_metadata_text:
                 plot = 6
             
-        # --- TRACK 3: MATURITY SCORE (Scans content flags independently) ---
+        # --- TRACK 3: MATURITY SCORE ---
         maturity = 1 if is_picture_book else 4
-        
-        explicit_keywords = ['thriller', 'crime', 'mature', 'psychological', 'erotica', 'explicit', 'adult situation']
-        dark_folklore_keywords = ['grim', 'horror', 'witch', 'cannibal', 'murder', 'abandoned', 'death', 'dark', 'disturbing', 'violence', 'scary', 'sinister', 'vengeance', 'blood']
+        explicit_keywords = ['thriller', 'crime', 'mature', 'psychological', 'erotica', 'explicit']
+        dark_folklore_keywords = ['grim', 'horror', 'witch', 'cannibal', 'murder', 'abandoned', 'death', 'dark', 'disturbing', 'violence', 'scary', 'sinister', 'vengeance']
         
         if any(w in title_lower for w in ['thrones', 'ice and fire', 'asoiaf']):
             maturity = 10
         elif any(k in full_metadata_text for k in explicit_keywords):
             maturity = 8 if pages > 400 else 7
         elif any(k in full_metadata_text for k in dark_folklore_keywords):
-            # Keeps language/plot simple, but lifts the safety flag for disturbing context safely
             maturity = 5 if is_picture_book else 6
         elif is_picture_book and any(w in full_metadata_text for w in ['humor', 'wry', 'funny']):
             maturity = 2
@@ -114,7 +125,11 @@ def calculate_mosaic_scores(title, force_picture_layout):
         }, None
         
     except Exception:
-        return {"title": title.title(), "author": "Analytical Mode", "cognitive": 5, "plot": 5, "maturity": 4}, None
+        # Safe structural fallback matrix 
+        cognitive_fb = 2 if any(k in title_lower for k in ['hansel', 'gretel', 'gretal', 'bears', 'goldi', 'cinder', 'hood']) else 5
+        plot_fb = 1 if cognitive_fb == 2 else 5
+        maturity_fb = 5 if any(k in title_lower for k in ['hansel', 'gretel', 'gretal', 'witch', 'wolf']) else 4
+        return {"title": title.title(), "author": "Analytical Fallback Mode", "cognitive": cognitive_fb, "plot": plot_fb, "maturity": maturity_fb}, None
 
 book_input = st.text_input("Enter Book Title:", "")
 
