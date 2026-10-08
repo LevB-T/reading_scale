@@ -10,17 +10,27 @@ st.markdown("""
     .metric-box {padding: 20px; border-radius: 10px; background-color: white; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 15px;}
     .score-title {font-size: 13px; color: #4A5568; font-weight: bold; letter-spacing: 0.05em;}
     .score-num {font-size: 48px; font-weight: 800; color: #2B6CB0; margin: 10px 0;}
+    .warning-banner {padding: 10px 15px; border-radius: 6px; background-color: #FFF5F5; border-left: 5px solid #E53E3E; color: #C53030; font-size: 13px; font-weight: bold; margin-bottom: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
 st.title("📚 The Three-Digit Book Finder")
 st.subheader("Find a book that genuinely pushes your reading range.")
+
+# --- THE SAFETY WARNING SUBHEADING ---
+st.markdown("""
+<div class="warning-banner">
+    ⚠️ IMPORTANT: The Maturity score is a severity scale out of 10, NOT a recommended age! 
+    (For example: A score of 10 means intense adult themes, NOT for 10-year-olds.)
+</div>
+""", unsafe_allow_html=True)
+
 st.write("Type a title below to instantly evaluate its **Language**, **Plot**, and **Maturity** tracks.")
 
 def calculate_mosaic_scores(title):
     title_lower = title.lower().strip()
     
-    # --- STEP 1: TYPO-PROOF ABSOLUTE OVERRIDES (Catches fragments like 'frankenstion') ---
+    # --- TYPO-PROOF ABSOLUTE OVERRIDES ---
     if any(k in title_lower for k in ['frank', 'shelley']):
         return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
         
@@ -31,7 +41,7 @@ def calculate_mosaic_scores(title):
         return {"title": "A Song of Ice and Fire (Series Context)", "author": "George R.R. Martin", "cognitive": 7, "plot": 9, "maturity": 10}, None
 
     query = title.replace(' ', '+')
-    url = f"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=3"
+    url = f"https://googleapis.com{query}&maxResults=3"
     
     try:
         response = requests.get(url, timeout=4).json()
@@ -39,14 +49,11 @@ def calculate_mosaic_scores(title):
             return {"title": title.title(), "author": "Unknown", "cognitive": 5, "plot": 5, "maturity": 4}, None
             
         best_volume = response['items']['volumeInfo']
-        
-        # Pulling details from the best API match
         pages = best_volume.get('pageCount', 250)
         categories = [c.lower() for c in best_volume.get('categories', [])]
         description = best_volume.get('description', '').lower()
         clean_title = best_volume.get('title', '').lower()
         
-        # Second backup safety check: scan api returned text for fragments too
         if 'frank' in clean_title:
             return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
         if any(k in clean_title for k in ['quix', 'quij']):
@@ -54,11 +61,10 @@ def calculate_mosaic_scores(title):
 
         full_metadata_text = (clean_title + " " + description + " " + " ".join(categories)).lower()
         
-        # Scan variations for historical timeline flags
         earliest_year = 2026
         for item in response['items']:
             p_date = item.get('volumeInfo', {}).get('publishedDate', '2026')
-            try: found_year = int(p_date.split('-')[0]); earliest_year = min(earliest_year, found_year)
+            try: found_year = int(p_date.split('-')); earliest_year = min(earliest_year, found_year)
             except Exception: continue
 
         is_classic_era = False
@@ -102,7 +108,6 @@ def calculate_mosaic_scores(title):
         }, None
         
     except Exception:
-        # Emergency hard local backup calculation block
         if any(k in title_lower for k in ['frank', 'quix', 'quij', 'ody', 'punish']):
             return {"title": title.title(), "author": "Local Model", "cognitive": 9, "plot": 6, "maturity": 6}, None
         return {"title": title.title(), "author": "Analytical Mode", "cognitive": 5, "plot": 5, "maturity": 4}, None
@@ -117,11 +122,11 @@ if st.button("Analyze Book Difficulty") and book_input:
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.markdown(f'<div class="metric-box"><div class="score-title">🧠 LANGUAGE</div><div class="score-num">{data["cognitive"]}</div><p style="font-size:11px; color:#718096; margin:0;">Sentence & vocabulary.</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-box"><div class="score-title">🧠 LANGUAGE</div><div class="score-num">{data["cognitive"]}</div><p style="font-size:11px; color:#718096; margin:0;">Sentence complexity.</p></div>', unsafe_allow_html=True)
         with col2:
             st.markdown(f'<div class="metric-box"><div class="score-title">🧩 PLOT STRUCTURE</div><div class="score-num">{data["plot"]}</div><p style="font-size:11px; color:#718096; margin:0;">Subplots & timelines.</p></div>', unsafe_allow_html=True)
         with col3:
-            st.markdown(f'<div class="metric-box"><div class="score-title">🔞 MATURITY</div><div class="score-num">{data["maturity"]}</div><p style="font-size:11px; color:#718096; margin:0;">Adult themes & violence.</p></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-box"><div class="score-title">🔞 MATURITY (SCALE)</div><div class="score-num">{data["maturity"]}</div><p style="font-size:11px; color:#C53030; font-weight:bold; margin:0;">10 = Most Intense Theme</p></div>', unsafe_allow_html=True)
         
         st.markdown(f"<h2 style='text-align: center; color: #2D3748;'>System Code: <span style='color:#E53E3E;'>{data['cognitive']}.{data['plot']}.{data['maturity']}</span></h2>", unsafe_allow_html=True)
         
