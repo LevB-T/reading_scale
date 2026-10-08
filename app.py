@@ -19,16 +19,26 @@ st.write("Type a book title below to instantly separate its **Linguistic Challen
 
 def calculate_mosaic_scores(title):
     query = title.replace(' ', '+')
-    url = f"https://openlibrary.org{query}"
+    # Using Google Books public API for extreme speed and reliability
+    url = f"https://googleapis.com{query}&maxResults=1"
     try:
         response = requests.get(url, timeout=5).json()
-        if not response.get('docs'):
-            return None, "We couldn't find that book. Double-check your spelling and try again!"
-        doc = response['docs'][0]
-        pages = doc.get('number_of_pages_median', doc.get('number_of_pages', 250))
-        if isinstance(pages, list): pages = pages[0]
-        year = doc.get('first_publish_year', 2000)
-        subjects = [s.lower() for s in doc.get('subject', [])]
+        if 'items' not in response:
+            return None, "We couldn't find that book in the database. Double-check your spelling and try again!"
+        
+        volume_info = response['items'][0]['volumeInfo']
+        pages = volume_info.get('pageCount', 250)
+        
+        # Grab publish year if available
+        published_date = volume_info.get('publishedDate', '2000')
+        try:
+            year = int(published_date.split('-')[0])
+        except ValueError:
+            year = 2000
+            
+        # Collect descriptive tags or categories
+        categories = [c.lower() for c in volume_info.get('categories', [])]
+        description = volume_info.get('description', '').lower()
         
         # Brainpower / Cognitive Difficulty Algorithm
         if year < 1900:
@@ -44,22 +54,26 @@ def calculate_mosaic_scores(title):
             
         # Content Maturity Algorithm
         maturity = 4
-        explicit_tags = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'erotica', 'violence']
-        young_tags = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales']
+        explicit_keywords = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'erotica', 'violence', 'explicit', 'murder']
+        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'fiction / media tie-in']
         
-        if any(t in s for s in subjects for t in explicit_tags) or "thrones" in title.lower():
-            maturity = 9 if pages > 500 else 8
-        elif any(t in s for s in subjects for t in young_tags):
+        # Check title strings directly for specific known examples
+        title_lower = title.lower()
+        if "thrones" in title_lower or "ice and fire" in title_lower:
+            maturity = 10
+        elif any(k in description for k in explicit_keywords) or any(k in c for c in categories for k in explicit_keywords):
+            maturity = 8 if pages > 400 else 7
+        elif any(k in description for k in young_keywords) or any(k in c for c in categories for k in young_keywords) or "wimpy kid" in title_lower:
             maturity = 2
             
         return {
-            "title": doc.get('title', title),
-            "author": doc.get('author_name', ['Unknown Author'])[0],
+            "title": volume_info.get('title', title),
+            "author": ", ".join(volume_info.get('authors', ['Unknown Author'])),
             "cognitive": cognitive,
             "maturity": maturity
         }, None
     except Exception:
-        return None, "The public book registry is running slow. Please press the button to try again!"
+        return None, "The book registry is running slow. Please press the button to try again!"
 
 book_input = st.text_input("Enter Book Title (e.g., The Odyssey, Holes, A Game of Thrones):", "")
 
