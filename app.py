@@ -26,10 +26,19 @@ st.markdown("""
 
 st.write("Type a title below to instantly evaluate its **Language**, **Plot**, and **Maturity** tracks.")
 
-def calculate_mosaic_scores(title):
+# --- THE FIX: USER INTERFACE OVERRIDE TOGGLE ---
+is_manual_fairy_tale = st.checkbox("🧩 Check this box if this book is an Illustrated Picture Book, Early Reader, or Short Fairy Tale.")
+
+def calculate_mosaic_scores(title, force_fairy_tale):
     title_lower = title.lower().strip()
     
+    # Absolute user-forced override rule
+    if force_fairy_tale:
+        return {"title": title.title(), "author": "Children's Edition", "cognitive": 1, "plot": 1, "maturity": 1}, None
+    
     # --- TYPO-PROOF ABSOLUTE OVERRIDES ---
+    if any(k in title_lower for k in ['goldilocks', 'three bears', '3 bears']):
+        return {"title": "Goldilocks and the Three Bears", "author": "Classic Fairy Tale", "cognitive": 1, "plot": 1, "maturity": 1}, None
     if any(k in title_lower for k in ['frank', 'shelley']):
         return {"title": "Frankenstein", "author": "Mary Shelley", "cognitive": 10, "plot": 6, "maturity": 7}, None
     if any(k in title_lower for k in ['quix', 'quij']):
@@ -48,14 +57,13 @@ def calculate_mosaic_scores(title):
             return {"title": title.title(), "author": "Unknown", "cognitive": 5, "plot": 5, "maturity": 4}, None
             
         best_volume = response['items']['volumeInfo']
-        pages = best_volume.get('pageCount', 0) # Fallback to 0 to accurately detect unlogged thin picture books
+        pages = best_volume.get('pageCount', 0)
         categories = [c.lower() for c in best_volume.get('categories', [])]
         description = best_volume.get('description', '').lower()
         clean_title = best_volume.get('title', '').lower()
         
         full_metadata_text = (clean_title + " " + description + " " + " ".join(categories)).lower()
         
-        # Pull earliest year
         earliest_year = 2026
         for item in response['items']:
             p_date = item.get('volumeInfo', {}).get('publishedDate', '2026')
@@ -66,10 +74,10 @@ def calculate_mosaic_scores(title):
         if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction']):
             is_classic_era = True
 
-        # --- SMART DETECTOR FOR SHORT PICTURE BOOKS / EARLY READERS ---
+        # --- DETECTOR FOR SHORT PICTURE BOOKS / EARLY READERS ---
         is_picture_book = False
-        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'readers', 'bedtime story', 'tales for kids']
-        if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords):
+        young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'readers', 'fable', 'nursery']
+        if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords) or any(w in clean_title for w in ['bears', 'goldi', 'cinderella', 'piggie', 'seuss', 'gretel', 'rapunzel', 'sleeping beauty']):
             is_picture_book = True
 
         # --- 1. LANGUAGE ALGORITHM ---
@@ -99,7 +107,6 @@ def calculate_mosaic_scores(title):
             
         # --- 3. MATURITY SCORE ---
         if is_picture_book:
-            # Subtle dark humor protection (like the rabbit getting eaten in I Want My Hat Back)
             maturity = 2 if any(w in full_metadata_text for w in ['humor', 'dark', 'funny', 'wry']) else 1
         else:
             maturity = 4
@@ -122,7 +129,7 @@ book_input = st.text_input("Enter Book Title:", "")
 
 if st.button("Analyze Book Difficulty") and book_input:
     with st.spinner("Analyzing text attributes..."):
-        data, error = calculate_mosaic_scores(book_input)
+        data, error = calculate_mosaic_scores(book_input, is_manual_fairy_tale)
         st.success(f"System Matrix Scan Complete! Verified As: **{data['title']}**")
         
         col1, col2, col3 = st.columns(3)
