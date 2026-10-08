@@ -26,24 +26,17 @@ st.markdown("""
 
 st.write("Type a title below to instantly evaluate its **Language**, **Plot**, and **Maturity** tracks.")
 
-# --- THE USER-INTERFACE FORMAT OVERRIDE ---
 is_manual_picture_layout = st.checkbox("🧩 Check this box if this book is in a short, illustrated picture book layout or traditional children's fable.")
 
 def calculate_mosaic_scores(title, force_picture_layout):
     title_lower = title.lower().strip()
     
-    # --- RULE 1: THE MASTER KILL SWITCH (Intercepts EVERYTHING if box is checked) ---
+    # --- RULE 1: THE MASTER KILL SWITCH ---
     if force_picture_layout:
-        # Defaults for a standard children's layout
-        cognitive = 2
-        plot = 1
-        maturity = 1
-        
-        # Scan title string directly for dark folklore indicators to keep maturity ratings highly accurate
+        cognitive, plot, maturity = 2, 1, 1
         dark_folklore = ['hansel', 'gretel', 'gretal', 'witch', 'grim', 'wolf', 'riding hood', 'bluebeard', 'cannibal', 'ogre']
         if any(k in title_lower for k in dark_folklore):
             maturity = 5
-            
         return {"title": title.title(), "author": "Traditional Children's / Folklore Edition", "cognitive": cognitive, "plot": plot, "maturity": maturity}, None
 
     query = title.replace(' ', '+')
@@ -69,9 +62,9 @@ def calculate_mosaic_scores(title, force_picture_layout):
             try: found_year = int(p_date.split('-')); earliest_year = min(earliest_year, found_year)
             except Exception: continue
 
-        is_classic_era = True if earliest_year < 1920 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction', '19th century']) else False
+        is_classic_era = True if earliest_year < 1940 or any(k in full_metadata_text for k in ['classic', 'antiquity', 'mythology', 'historical fiction', '19th century']) else False
 
-        # --- AUTOMATIC ERA/FORMAT BALANCING ---
+        # --- FORMAT BALANCING ---
         is_picture_book = False
         young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'preschool', 'readers', 'nursery', 'fable', 'fairy tales']
         if (0 < pages <= 60) or any(k in full_metadata_text for k in young_keywords) or any(w in title_lower for w in ['bears', 'goldi', 'piggie', 'seuss', 'gretel', 'cinder', 'riding hood']):
@@ -81,7 +74,10 @@ def calculate_mosaic_scores(title, force_picture_layout):
         if is_picture_book:
             cognitive = 2 if pages > 35 else 1
         elif is_classic_era:
-            cognitive = 10 if pages > 350 else 9
+            cognitive = 9 if pages > 350 else 8
+            # Absolute classical density peaks
+            if any(w in title_lower for w in ['quixote', 'frankenstein', 'odyssey', 'iliad', 'punishment']):
+                cognitive = 10
         elif pages > 800:
             cognitive = 8
         elif pages > 450:
@@ -99,22 +95,25 @@ def calculate_mosaic_scores(title, force_picture_layout):
             epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined', 'political intrigue']
             if any(i in full_metadata_text for i in epic_indicators) or pages > 600 or any(w in title_lower for w in ['fellowship', 'thrones', 'wheel of time']):
                 plot = 9 if pages > 750 else 8
-            elif pages > 350 or 'mystery' in full_metadata_text:
+            elif pages > 350 or 'mystery' in full_metadata_text or 'dystop' in full_metadata_text:
                 plot = 6
             
         # --- TRACK 3: MATURITY SCORE ---
         maturity = 1 if is_picture_book else 4
+        
         explicit_keywords = ['thriller', 'crime', 'mature', 'psychological', 'erotica', 'explicit']
         dark_folklore_keywords = ['grim', 'horror', 'witch', 'cannibal', 'murder', 'abandoned', 'death', 'dark', 'disturbing', 'violence', 'scary', 'sinister', 'vengeance']
+        dystopian_keywords = ['dystop', 'totalitarian', 'huxley', 'orwell', 'conditioning', 'censorship', 'oppress', 'brave new']
         
         if any(w in title_lower for w in ['thrones', 'ice and fire', 'asoiaf']):
             maturity = 10
+        elif any(k in title_lower for k in dystopian_keywords) or any(k in full_metadata_text for k in dystopian_keywords):
+            # Dynamic upgrade for heavy psychological science fiction/dystopian narratives
+            maturity = 8 if pages > 300 else 7
         elif any(k in full_metadata_text for k in explicit_keywords):
             maturity = 8 if pages > 400 else 7
         elif any(k in full_metadata_text for k in dark_folklore_keywords):
             maturity = 5 if is_picture_book else 6
-        elif is_picture_book and any(w in full_metadata_text for w in ['humor', 'wry', 'funny']):
-            maturity = 2
             
         return {
             "title": best_volume.get('title', title),
@@ -125,10 +124,10 @@ def calculate_mosaic_scores(title, force_picture_layout):
         }, None
         
     except Exception:
-        # Safe structural fallback matrix 
-        cognitive_fb = 2 if any(k in title_lower for k in ['hansel', 'gretel', 'gretal', 'bears', 'goldi', 'cinder', 'hood']) else 5
+        # Safe fallback block
+        cognitive_fb = 2 if any(k in title_lower for k in ['hansel', 'gretel', 'bears', 'goldi', 'cinder', 'hood']) else 5
         plot_fb = 1 if cognitive_fb == 2 else 5
-        maturity_fb = 5 if any(k in title_lower for k in ['hansel', 'gretel', 'gretal', 'witch', 'wolf']) else 4
+        maturity_fb = 5 if any(k in title_lower for k in ['hansel', 'gretel', 'witch', 'wolf']) else 4
         return {"title": title.title(), "author": "Analytical Fallback Mode", "cognitive": cognitive_fb, "plot": plot_fb, "maturity": maturity_fb}, None
 
 book_input = st.text_input("Enter Book Title:", "")
@@ -149,7 +148,7 @@ if st.button("Analyze Book Difficulty") and book_input:
         st.markdown(f"<h2 style='text-align: center; color: #2D3748;'>System Code: <span style='color:#E53E3E;'>{data['cognitive']}.{data['plot']}.{data['maturity']}</span></h2>", unsafe_allow_html=True)
         
         if data['maturity'] >= 5 and data['cognitive'] <= 3:
-            st.warning("⚠️ **Content Warning:** While this book features basic language mechanics, the themes or underlying folklore include dark, scary, or disturbing elements.")
+            st.warning("⚠️ **Content Warning:** While this book features basic language mechanics, the themes include dark, scary, or disturbing elements.")
         elif data['cognitive'] <= 2:
             st.info(f"👶 **Reader Insight:** This is an early foundational picture book layout designed for quick independent parsing.")
         elif data['plot'] > data['cognitive']:
