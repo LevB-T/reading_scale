@@ -18,18 +18,16 @@ st.subheader("Find a book that genuinely pushes your reading range.")
 st.write("Type a title below to instantly evaluate its **Language**, **Plot**, and **Maturity** tracks.")
 
 def calculate_fallback_scores(title_lower):
-    """Smart localized analysis that runs instantly even if external APIs completely fail or act weird."""
+    """Smart localized analysis that runs instantly even if external APIs fail or act weird."""
     cognitive, plot, maturity = 5, 5, 4
     
-    classical_titles = ['odyssey', 'iliad', 'shakespeare', 'hamlet', 'macbeth', 'gatsby', 'punishment', 'misérables', 'heights']
-    epic_fantasy_titles = ['thrones', 'fellowship', 'ring', 'hobbit', 'tolkien', 'wheel of time', 'dune', 'sanderson', 'stormlight', 'ice and fire', 'asoiaf']
-    young_titles = ['wimpy kid', 'babas', 'tree house', 'underpants', 'potter', 'percy', 'jackson']
-    
-    if any(k in title_lower for k in classical_titles):
+    if any(k in title_lower for k in ['quix', 'quij', 'ody', 'odis', 'iliad', 'shak', 'haml', 'macb', 'gats', 'punish', 'miser', 'wuth']):
         cognitive, plot, maturity = 9, 7, 6
-    elif any(k in title_lower for k in epic_fantasy_titles):
-        cognitive, plot, maturity = 7, 9, 10 if ("thrones" in title_lower or "ice and fire" in title_lower or "asoiaf" in title_lower) else 5
-    elif any(k in title_lower for k in young_titles):
+        if 'quix' in title_lower or 'quij' in title_lower:
+            cognitive, plot, maturity = 10, 8, 5
+    elif any(k in title_lower for k in ['thron', 'fellow', 'ring', 'hobbit', 'tolk', 'wheel of time', 'dune', 'sanders', 'ice and fire', 'asoiaf', 'fyre']):
+        cognitive, plot, maturity = 7, 9, 10 if ("thron" in title_lower or "ice" in title_lower or "asoiaf" in title_lower or "fyre" in title_lower) else 5
+    elif any(k in title_lower for k in ['wimpy', 'wimpi', 'babar', 'tree house', 'underp', 'pott', 'percy', 'jacks']):
         cognitive, plot, maturity = 2, 3, 2
         
     if len(title_lower.split()) > 4:
@@ -40,9 +38,12 @@ def calculate_fallback_scores(title_lower):
 def calculate_mosaic_scores(title):
     title_lower = title.lower()
     
-    # ADVANCED CATCH: If they type the series name, catch it BEFORE hitting the server
-    if "ice and fire" in title_lower or "asoiaf" in title_lower:
+    # MASTER MANUAL OVERRIDES LIST (Catches systemic data entry bugs instantly)
+    if any(k in title_lower for k in ['ice and fire', 'asoiaf', 'ice and fyre', 'game of thron']):
         return {"title": "A Song of Ice and Fire (Series Context)", "author": "George R.R. Martin", "cognitive": 7, "plot": 9, "maturity": 10}, None
+        
+    if any(k in title_lower for k in ['don quixote', 'don quijote', 'quixote']):
+        return {"title": "Don Quixote", "author": "Miguel de Cervantes", "cognitive": 10, "plot": 8, "maturity": 5}, None
 
     query = title.replace(' ', '+')
     url = f"https://googleapis.com{query}&maxResults=1"
@@ -56,7 +57,7 @@ def calculate_mosaic_scores(title):
         if 'items' not in data_json:
             return calculate_fallback_scores(title_lower), None
         
-        volume_info = data_json['items'][0]['volumeInfo'] # Always pull the best first search result object
+        volume_info = data_json['items']['volumeInfo']
         pages = volume_info.get('pageCount', 250)
         published_date = volume_info.get('publishedDate', '2000')
         
@@ -67,7 +68,9 @@ def calculate_mosaic_scores(title):
             
         categories = [c.lower() for c in volume_info.get('categories', [])]
         description = volume_info.get('description', '').lower()
-        full_text_to_scan = (volume_info.get('title', '') + " " + description).lower()
+        
+        clean_api_title = volume_info.get('title', '').lower()
+        full_text_to_scan = (clean_api_title + " " + description).lower()
         
         # --- 1. LANGUAGE SCORE ---
         if year < 1900:
@@ -86,7 +89,7 @@ def calculate_mosaic_scores(title):
         epic_indicators = ['epic', 'saga', 'sprawling', 'generations', 'perspectives', 'multiple storylines', 'intertwined', 'political intrigue', 'complex web', 'rich lore']
         mid_indicators = ['mystery', 'secrets', 'subplot', 'timeline', 'betrayal', 'conspiracy', 'adventure']
         
-        if any(i in full_text_to_scan for i in epic_indicators) or pages > 600 or "fellowship" in title_lower or "thrones" in title_lower or "wheel of time" in title_lower:
+        if any(i in full_text_to_scan for i in epic_indicators) or pages > 600 or "fellowship" in clean_api_title or "thrones" in clean_api_title or "wheel of time" in clean_api_title:
             plot = 9 if pages > 750 else 8
         elif any(i in full_text_to_scan for i in mid_indicators) or pages > 350:
             plot = 6
@@ -96,11 +99,11 @@ def calculate_mosaic_scores(title):
         explicit_keywords = ['thriller', 'horror', 'war', 'crime', 'mature', 'psychological', 'erotica', 'violence', 'explicit', 'murder', 'dark fantasy', 'sinister']
         young_keywords = ['juvenile', 'children', 'picture book', 'elementary', 'fairy tales', 'preschool', 'fiction / media tie-in']
         
-        if "thrones" in title_lower or "ice and fire" in title_lower or "asoiaf" in title_lower:
+        if "thrones" in clean_api_title or "ice and fire" in clean_api_title or "asoiaf" in clean_api_title:
             maturity = 10
         elif any(k in full_text_to_scan for k in explicit_keywords) or any(k in c for c in categories for k in explicit_keywords):
             maturity = 8 if pages > 400 else 7
-        elif any(k in full_text_to_scan for k in young_keywords) or any(k in c for c in categories for k in young_keywords) or "wimpy kid" in title_lower:
+        elif any(k in full_text_to_scan for k in young_keywords) or any(k in c for c in categories for k in young_keywords) or "wimpy kid" in clean_api_title:
             maturity = 2
             
         return {
